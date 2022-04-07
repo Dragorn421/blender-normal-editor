@@ -15,6 +15,35 @@
 
 
 # Original idea from the Recalc Vertex Normals add-on by adsn
+
+# The original Blend4Web vertex_normals.py file can be found at:
+# https://github.com/TriumphLLC/Blend4Web/blob/master/addons/blend4web/vertex_normals.py
+# or as part of the full distribution, or Blender Add-on, on the download page:
+# https://www.blend4web.com/en/downloads/
+# features: https://www.blend4web.com/en/community/article/131/
+
+# List of changes
+# Made standalone:
+#  remove translator feature
+#  register classes individually, instead of relying on a single register_module
+# Panel B4W_VertexNormalsUI:
+#  moved to the "Shading / UVs" tab
+#  added link to Blend4Web website
+#  indicate addon source of panel
+# Copy and edit bl_info from Blend4Web's __init__
+bl_info = {
+    "name": "Normal editor from Blend4Web",
+    "author": "Blend4Web Development Team",
+    "version": (18, 5, 0),
+    "blender": (2, 79, 0),
+    "location": '"Shading / UVs" tab',
+    "description": "Normal editor from Blend4Web, working standalone",
+    "warning": "",
+    "wiki_url": "https://www.blend4web.com/doc/en/normal_editor.html",
+    "category": "Mesh"
+}
+
+added_by_info = 'This is copied from Blend4Web and works standalone.'
     
 import bpy
 import mathutils
@@ -28,11 +57,9 @@ from collections import namedtuple
 from math import sqrt
 from math import radians
 
-import blend4web
-b4w_modules =  ["translator",]
-for m in b4w_modules:
-    exec(blend4web.load_module_script.format(m))
-from blend4web.translator import _, p_
+# from blend4web/translator.py (under the same license as this file)
+_ = lambda string : string
+p_ = lambda string, context : string
 
 global b4w_vertex_to_loops_map
 b4w_vertex_to_loops_map = {}
@@ -168,7 +195,7 @@ class B4W_VertexNormalsUI(bpy.types.Panel):
     bl_label = _('Normal Editor')
     bl_space_type = 'VIEW_3D'
     bl_region_type = 'TOOLS'
-    bl_category = "Blend4Web"
+    bl_category = "Shading / UVs"
     def __init__(self):
         pass
 
@@ -187,6 +214,9 @@ class B4W_VertexNormalsUI(bpy.types.Panel):
         is_edit_mode = context.active_object.mode == 'EDIT'
 
         layout = self.layout
+
+        layout.operator('wm.url_open', text='Blend4Web website', icon='INFO').url = 'https://www.blend4web.com'
+        layout.separator()
 
         row = layout.row(align=True)
         row.prop(context.active_object.data, 'use_auto_smooth',
@@ -286,6 +316,9 @@ class B4W_VertexNormalsUI(bpy.types.Panel):
             row.operator('b4w.approx_normals_from_mesh', text = p_('Copy From Mesh', "Operator"))
         row.prop(context.window_manager, 'b4w_copy_normal_method', text='')
         row.enabled = not is_edit_mode
+
+        layout.separator()
+        layout.label(text=added_by_info, icon='INFO')
 
 def lerp_to_vertex_loop_normal(index, value, t):
     n = b4w_loops_normals[index]
@@ -1516,7 +1549,26 @@ def clear_properties():
         except:
             pass
 
+classes = (
+    B4W_ShapeKeysNormal,
+    B4W_VertexNormalsUI,
+    B4W_CursorAlignVertexNormals,
+    B4W_AxisAlignVertexNormals,
+    B4W_FaceVertexNormals,
+    B4W_CopyNormalsFromMesh,
+    B4W_ApproxNormalsFromMesh,
+    B4W_CopyNormal,
+    B4W_PasteNormal,
+    B4W_ApplyOffset,
+    B4W_RestoreNormals,
+    B4W_SmoothNormals,
+    OperatorScaleNormal,
+    OperatorRotateNormal,
+)
+
 def register():
+    for clazz in classes:
+        bpy.utils.register_class(clazz)
     draw_helper_callback_enable()
     register_hotkey()
     init_properties()
@@ -1525,3 +1577,5 @@ def unregister():
     draw_helper_callback_disable()
     unregister_hotkey()
     clear_properties()
+    for clazz in reversed(classes):
+        bpy.utils.unregister_class(clazz)
