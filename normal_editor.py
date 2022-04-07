@@ -35,8 +35,8 @@ bl_info = {
     "name": "Normal editor from Blend4Web",
     "author": "Blend4Web Development Team",
     "version": (18, 5, 0),
-    "blender": (2, 79, 0),
-    "location": '"Shading / UVs" tab',
+    "blender": (2, 80, 0),
+    "location": '3D View > "Tool" tab',
     "description": "Normal editor from Blend4Web, working standalone",
     "warning": "",
     "wiki_url": "https://www.blend4web.com/doc/en/normal_editor.html",
@@ -92,6 +92,19 @@ AXES_MAP = {"X": Vector((1,0,0)),
 global modal_operator_helper_params
 modal_operator_helper_params = RotationHelperParams()
 
+def get_view3d_overlay(context):
+    """
+    print(context.area)
+    print(context.area.type)
+    print(context.area.spaces)
+    print([space for space in context.area.spaces])
+    print([space.type for space in context.area.spaces])
+    """
+    for space in context.area.spaces:
+        if space.type == "VIEW_3D":
+            return space.overlay
+    return None
+
 def set_vertex_normal(index, value):
     (x,y,z) = value
     l = sqrt(x*x + y*y + z*z)
@@ -141,7 +154,7 @@ def prepare(context):
     load_loops_normals_into_global_cache(context.active_object)
 
 class B4W_ShapeKeysNormal(bpy.types.PropertyGroup):
-    normal = bpy.props.FloatVectorProperty(name=_("Normal"), subtype="NONE",
+    normal: bpy.props.FloatVectorProperty(name=_("Normal"), subtype="NONE",
             unit="NONE", size=3)
 
 def b4w_select(self, context):
@@ -194,8 +207,8 @@ class B4W_VertexNormalsUI(bpy.types.Panel):
     bl_idname = "B4W_VIEW3D_PT_normal_editor"
     bl_label = _('Normal Editor')
     bl_space_type = 'VIEW_3D'
-    bl_region_type = 'TOOLS'
-    bl_category = "Shading / UVs"
+    bl_region_type = 'UI'
+    bl_category = "Tool"
     def __init__(self):
         pass
 
@@ -227,11 +240,15 @@ class B4W_VertexNormalsUI(bpy.types.Panel):
         # draw normals
         row = layout.row(align=True)
         row.active = context.active_object.data.use_auto_smooth
-        row.prop(context.active_object.data, 'show_normal_loop', text=_('Show Normals'),
-            toggle=True, icon='LOOPSEL')
-        row.enabled = is_edit_mode
-        row.prop(bpy.context.scene.tool_settings, 'normal_size', text=_('Size'))
-        row.enabled = is_edit_mode
+        view3d_overlay = get_view3d_overlay(context)
+        if view3d_overlay:
+            row.prop(view3d_overlay, 'show_split_normals', text=_('Show Normals'),
+                toggle=True, icon='NORMALS_VERTEX_FACE')
+            row.enabled = is_edit_mode
+            row.prop(view3d_overlay, 'normals_length', text=_('Size'))
+            row.enabled = is_edit_mode
+        else:
+            row.label(text="No view3d_overlay")
 
         # Split normals
         row = layout.row()
@@ -250,9 +267,9 @@ class B4W_VertexNormalsUI(bpy.types.Panel):
         row.active = context.active_object.data.use_auto_smooth
         row.enabled = is_edit_mode
         col = row.column()
-        col.operator('object.b4w_normal_rotate', text = p_('Rotate', "Operator"), icon='MAN_ROT')
+        col.operator('object.b4w_normal_rotate', text = p_('Rotate', "Operator"), icon='ORIENTATION_GIMBAL')
         col = row.column()
-        col.operator('object.b4w_normal_scale', text = p_('Scale', "Operator"), icon='MAN_SCALE')
+        col.operator('object.b4w_normal_scale', text = p_('Scale', "Operator"), icon='GIZMO')
 
         row = layout.row()
         row.active = context.active_object.data.use_auto_smooth
@@ -273,8 +290,8 @@ class B4W_VertexNormalsUI(bpy.types.Panel):
             row.column(align=True).prop(context.window_manager, 'b4w_customnormal_offset', text='', expand=True)
 
             row = layout.row(align=True)
-            row.operator("object.b4w_apply_offset", text="Sub", icon='ZOOMOUT').sign = -1
-            row.operator("object.b4w_apply_offset", text="Add", icon='ZOOMIN').sign = 1
+            row.operator("object.b4w_apply_offset", text="Sub", icon='REMOVE').sign = -1
+            row.operator("object.b4w_apply_offset", text="Add", icon='ADD').sign = 1
 
         # Transform operators
         layout.label(text="Transform:")
@@ -296,7 +313,7 @@ class B4W_VertexNormalsUI(bpy.types.Panel):
         row = layout.row(align=True)
         row.active = context.active_object.data.use_auto_smooth
         row.operator('object.cursor_align_vertex_normals', text = p_('3D Cursor', "Operator"), icon='CURSOR')
-        row.operator('object.axis_align_vertex_normals', text = p_('Axis', "Operator"), icon='MANIPUL')
+        row.operator('object.axis_align_vertex_normals', text = p_('Axis', "Operator"), icon='EMPTY_AXIS')
         row.operator('object.face_vertex_normals', text = p_('Face', "Operator"), icon='FACESEL')
         row.enabled = not context.window_manager.b4w_split and is_edit_mode
 
@@ -339,13 +356,13 @@ class B4W_CursorAlignVertexNormals(bpy.types.Operator):
     bl_description = _('Align selected verts pointing away from 3d cursor')
     bl_options = {"INTERNAL", "REGISTER", "UNDO"}
 
-    towards = bpy.props.BoolProperty(
+    towards: bpy.props.BoolProperty(
         name = "Towards",
         description = _("Point normals towards the 3D cursor"),
         default = 0
     )
 
-    factor = bpy.props.FloatProperty(
+    factor: bpy.props.FloatProperty(
         name = "Factor",
         description = _("Factor"),
         subtype = 'FACTOR',
@@ -361,7 +378,7 @@ class B4W_CursorAlignVertexNormals(bpy.types.Operator):
         obj = context.active_object
         vert_index = len(bpy.context.active_object.data.vertices)
         obmat = context.active_object.matrix_world
-        vec1 = obmat.inverted() * context.scene.cursor_location
+        vec1 = obmat.inverted() @ context.scene.cursor.location
 
         bpy.ops.object.mode_set(mode='OBJECT')
 
@@ -387,13 +404,13 @@ class B4W_AxisAlignVertexNormals(bpy.types.Operator):
     bl_description = _('Selected verts to Z axis')
     bl_options = {"INTERNAL", "REGISTER", "UNDO"}
 
-    towards = bpy.props.BoolProperty(
+    towards: bpy.props.BoolProperty(
         name = "Towards",
         description = _("Point normals towards the 3D cursor"),
         default = True
     )
 
-    axis = bpy.props.EnumProperty(
+    axis: bpy.props.EnumProperty(
         name = "Axis",
         description = _("Alignment axis"),
         items = [
@@ -404,7 +421,7 @@ class B4W_AxisAlignVertexNormals(bpy.types.Operator):
         default = "Z"
     )
 
-    space = bpy.props.EnumProperty(
+    space: bpy.props.EnumProperty(
         name = "Space",
         description = _("Transform Space"),
         items = [
@@ -414,7 +431,7 @@ class B4W_AxisAlignVertexNormals(bpy.types.Operator):
         default = "Global"
     )
 
-    factor = bpy.props.FloatProperty(
+    factor: bpy.props.FloatProperty(
         name = "Factor",
         description = _("Factor"),
         subtype = 'FACTOR',
@@ -435,7 +452,7 @@ class B4W_AxisAlignVertexNormals(bpy.types.Operator):
             align_vector = -align_vector
 
         if self.space == 'Global':
-            align_vector = obj.rotation_euler.to_matrix().inverted() * align_vector
+            align_vector = obj.rotation_euler.to_matrix().inverted() @ align_vector
             align_vector.normalize()
 
         bpy.ops.object.mode_set(mode='OBJECT')
@@ -458,13 +475,13 @@ class B4W_FaceVertexNormals(bpy.types.Operator):
     bl_description = _('Copy face normal')
     bl_options = {"INTERNAL", "REGISTER", "UNDO"}
 
-    smooth_shared = bpy.props.BoolProperty(
+    smooth_shared: bpy.props.BoolProperty(
         name = "Smooth Shared",
         description = _("Smooth shared normals of shared vertices"),
         default = True
     )
 
-    factor = bpy.props.FloatProperty(
+    factor: bpy.props.FloatProperty(
         name = "Factor",
         description = _("Factor"),
         subtype = 'FACTOR',
@@ -492,6 +509,7 @@ class B4W_FaceVertexNormals(bpy.types.Operator):
             self.report({'INFO'}, _('Please select at least 3 vertices'))
             return {"FINISHED"}
 
+        # FIXME selecting 3 vertices doesn't guarantee sel_polys is not empty
         sel_polys = []
         for poly in mesh.polygons:
             if poly.select == True:
@@ -528,7 +546,7 @@ class B4W_CopyNormalsFromMesh(bpy.types.Operator):
                         ' for selected vertices')
     bl_options = {"REGISTER", "UNDO", "INTERNAL"}
 
-    threshold = bpy.props.FloatProperty(
+    threshold: bpy.props.FloatProperty(
         name = "Threshold",
         description = _("Threshold"),
         min = 0.00001,
@@ -538,7 +556,7 @@ class B4W_CopyNormalsFromMesh(bpy.types.Operator):
         default = 0.001
     )
 
-    factor = bpy.props.FloatProperty(
+    factor: bpy.props.FloatProperty(
         name = "Factor",
         description = _("Factor"),
         subtype = 'FACTOR',
@@ -593,7 +611,7 @@ class B4W_ApproxNormalsFromMesh(bpy.types.Operator):
     bl_description = _("Approximate target mesh normals from source mesh")
     bl_options = {"INTERNAL", "REGISTER", "UNDO"}
 
-    factor = bpy.props.FloatProperty(
+    factor: bpy.props.FloatProperty(
         name = "Factor",
         description = _("Factor"),
         subtype = 'FACTOR',
@@ -643,9 +661,9 @@ class B4W_ApproxNormalsFromMesh(bpy.types.Operator):
 
         # transform vertices to world space
         for vert_dst in dst_vert_list:
-            vert_dst.co = matr_dst * vert_dst.co
+            vert_dst.co = matr_dst @ vert_dst.co
         for vert_src in src_vert_list:
-            vert_src.co = matr_src * vert_src.co
+            vert_src.co = matr_src @ vert_src.co
 
         # approximate normals
         verts_is_selected = False
@@ -701,7 +719,7 @@ def get_selected_split_normal_idx(obj):
 
 # main function for update custom normals
 # trans_param depends on trans_type
-# if trans_type == rotate -> strans_param == rotation matrix,
+# if trans_type == "transform" -> trans_param is matrix,
 # else trans_param is normal vector
 def update_custom_normal(self, context, trans_param, trans_type = "set",
         init_normals = None):
@@ -727,7 +745,7 @@ def update_custom_normal(self, context, trans_param, trans_type = "set",
                 normals_edited = True
                 if trans_type == "transform":
                     n = Vector(init_normals[i])
-                    n = trans_param * n
+                    n = trans_param @ n
                 elif trans_type == "set":
                     n = copy.copy(trans_param)
                 n.normalize()
@@ -736,7 +754,7 @@ def update_custom_normal(self, context, trans_param, trans_type = "set",
         ind = get_selected_split_normal_idx(obj)
         if trans_type == "transform":
             n = Vector(init_normals[ind])
-            n = trans_param * n
+            n = trans_param @ n
         elif trans_type == "set":
             n = copy.copy(trans_param)
         n.normalize()
@@ -755,7 +773,7 @@ def update_custom_normal1(self, context):
     if b4w_vn_customnormal_updated > 1:
         b4w_vn_customnormal_updated = 0
         return
-    normal = context.active_object.rotation_euler.to_matrix().inverted() * \
+    normal = context.active_object.rotation_euler.to_matrix().inverted() @ \
              context.window_manager.b4w_vn_customnormal1
     update_custom_normal(self, context, normal)
     context.window_manager.b4w_vn_customnormal2 = copy.copy(
@@ -767,7 +785,7 @@ def update_custom_normal2(self, context):
     if b4w_vn_customnormal_updated > 1:
         b4w_vn_customnormal_updated = 0
         return
-    normal = context.active_object.rotation_euler.to_matrix().inverted() * \
+    normal = context.active_object.rotation_euler.to_matrix().inverted() @ \
              context.window_manager.b4w_vn_customnormal2
     update_custom_normal(self, context, normal)
     if context.window_manager.b4w_vn_customnormal2.length != 0:
@@ -876,7 +894,7 @@ class B4W_ApplyOffset(bpy.types.Operator):
     bl_label = p_("Apply offset", "Operator")
     bl_description = _('Apply offset for selected normals')
     bl_options = {"INTERNAL", "UNDO"}
-    sign = bpy.props.IntProperty(
+    sign: bpy.props.IntProperty(
         name = "B4W: offset sign",
         description = _("Offset sign"),
         default = 1,
@@ -890,7 +908,7 @@ class B4W_ApplyOffset(bpy.types.Operator):
         check_b4w_obj_prop(context)
         load_loops_normals_into_global_cache(context.active_object)
         context.active_object.data.calc_normals()
-        offset = context.active_object.rotation_euler.to_matrix().inverted() * context.window_manager.b4w_customnormal_offset
+        offset = context.active_object.rotation_euler.to_matrix().inverted() @ context.window_manager.b4w_customnormal_offset
 
         if context.window_manager.b4w_split:
             idx = get_selected_split_normal_idx(context.active_object)
@@ -1032,7 +1050,7 @@ class EditNormalModalOperator():
             return None
         mouse = Vector(((self.mouse_x- a_x)/width*2 -1,
             (self.mouse_y - a_y)/height*2 -1 , 0 ))
-        mouse = context.space_data.region_3d.window_matrix.inverted() * mouse
+        mouse = context.space_data.region_3d.window_matrix.inverted() @ mouse
         return mouse
 
     def calc_eye_n(self, context):
@@ -1040,17 +1058,16 @@ class EditNormalModalOperator():
         eye_co = (context.space_data.region_3d.view_location +
             eye_n*context.space_data.region_3d.view_distance)
         obimat = context.active_object.matrix_world.inverted()
-        c_local = obimat * modal_operator_helper_params.c_world
+        c_local = obimat @ modal_operator_helper_params.c_world
         modal_operator_helper_params.c_local = c_local
-        eye_co_local = obimat * eye_co
+        eye_co_local = obimat @ eye_co
         n = eye_co_local - c_local
         n.normalize()
         return (n, c_local)
 
     def calc_r(self, n, c_local, mouse_local_old):
         # calculate projection of c_local on viewplane
-        c_pr = c_local + n * (n *
-            (modal_operator_helper_params.mouse_local - c_local))
+        c_pr = c_local + n * n.dot(modal_operator_helper_params.mouse_local - c_local)
 
         # calculate main vectors
         r_old = mouse_local_old - c_pr
@@ -1060,7 +1077,7 @@ class EditNormalModalOperator():
     def calc_mouse_world(self, context):
         mouse = self.calc_mouse_view(context)
         if mouse:
-            return context.space_data.region_3d.view_matrix.inverted() * mouse
+            return context.space_data.region_3d.view_matrix.inverted() @ mouse
         else:
             return None
 
@@ -1068,7 +1085,7 @@ class EditNormalModalOperator():
         modal_operator_helper_params.mouse_world = self.calc_mouse_world(context)
         if not modal_operator_helper_params.mouse_world:
             return False
-        modal_operator_helper_params.mouse_local = context.active_object.matrix_world.inverted() *\
+        modal_operator_helper_params.mouse_local = context.active_object.matrix_world.inverted() @\
                                              modal_operator_helper_params.mouse_world
         if not self.mouse_local_old:
             self.mouse_local_old = modal_operator_helper_params.mouse_local
@@ -1179,19 +1196,22 @@ class EditNormalModalOperator():
         n = 0
         for v in context.active_object.data.vertices:
             if v.select:
+                print("EditNormalModalOperator.invoke", "c_world +=", v.co)
                 modal_operator_helper_params.c_world = modal_operator_helper_params.c_world + v.co
                 n = n + 1
                 if context.window_manager.b4w_split:
                     break
         if n > 0:
-            modal_operator_helper_params.c_world = (context.active_object.matrix_world *
+            print("EditNormalModalOperator.invoke", "BEF c_world =", modal_operator_helper_params.c_world)
+            modal_operator_helper_params.c_world = (context.active_object.matrix_world @
                 (modal_operator_helper_params.c_world / n))
+        print("EditNormalModalOperator.invoke", "c_world =", modal_operator_helper_params.c_world)
 
         modal_operator_helper_params.constraint = None
 
         mouse_world = self.calc_mouse_world(context)
         if mouse_world:
-            self.mouse_local_old = context.active_object.matrix_world.inverted() * mouse_world
+            self.mouse_local_old = context.active_object.matrix_world.inverted() @ mouse_world
         else:
             self.mouse_local_old = None
 
@@ -1228,7 +1248,7 @@ class OperatorScaleNormal(EditNormalModalOperator,bpy.types.Operator):
         if modal_operator_helper_params.typed_number is not None:
             scale = modal_operator_helper_params.typed_number * constraint
 
-        scale = Vector((1,1,1)) - (1 - scale * constraint) * constraint
+        scale = Vector((1,1,1)) - (1 - scale.dot(constraint)) * constraint
         scale_matrix = Matrix([(scale.x, 0, 0),
                                (0, scale.y, 0),
                                (0, 0, scale.z)])
@@ -1236,7 +1256,7 @@ class OperatorScaleNormal(EditNormalModalOperator,bpy.types.Operator):
         if not modal_operator_helper_params.local_space:
             obmat = context.active_object.matrix_world.to_3x3()
             obinvmat = obmat.inverted()
-            scale_matrix = obinvmat * scale_matrix * obmat
+            scale_matrix = obinvmat @ scale_matrix @ obmat
 
         if context.window_manager.b4w_split:
             update_custom_normal(self, context, scale_matrix, "transform",
@@ -1263,7 +1283,7 @@ class OperatorRotateNormal(EditNormalModalOperator, bpy.types.Operator):
 
         if modal_operator_helper_params.typed_number:
             if modal_operator_helper_params.constraint:
-                matrix = Quaternion(bpy.context.active_object.matrix_world.inverted() *
+                matrix = Quaternion(bpy.context.active_object.matrix_world.inverted() @
                                               Vector(modal_operator_helper_params.constraint),
                                               -radians(modal_operator_helper_params.typed_number)).to_matrix()
             else:
@@ -1274,8 +1294,8 @@ class OperatorRotateNormal(EditNormalModalOperator, bpy.types.Operator):
             r_old, r = self.calc_r(n, c_local, self.mouse_local_old)
 
             # calculate projection of main vectors on orthogonal to view vector plane
-            r_pr = r - n*r*n
-            r_old_pr = r_old - n*r_old*n
+            r_pr = r - n.dot(r)*n
+            r_old_pr = r_old - n.dot(r_old)*n
 
             r_pr.normalize()
             r_old_pr.normalize()
@@ -1286,13 +1306,13 @@ class OperatorRotateNormal(EditNormalModalOperator, bpy.types.Operator):
             # correct rotation matrix in correspondence to constraint
             if modal_operator_helper_params.constraint:
                 constraint = modal_operator_helper_params.constraint
-                if n*constraint < 0:
+                if n.dot(constraint) < 0:
                     n = -n
-                matrix = n.rotation_difference(constraint).to_matrix() * matrix
+                matrix = n.rotation_difference(constraint).to_matrix() @ matrix
 
             if not modal_operator_helper_params.local_space:
                 obmat = context.active_object.matrix_world.to_3x3()
-                matrix = obmat.inverted() * matrix * obmat
+                matrix = obmat.inverted() @ matrix @ obmat
 
         if context.window_manager.b4w_split:
             update_custom_normal(self, context, matrix, "transform",
@@ -1338,8 +1358,8 @@ def draw_axis():
     n = Vector(modal_operator_helper_params.constraint)
 
     if modal_operator_helper_params.local_space:
-        v1 = bpy.context.active_object.matrix_world * (modal_operator_helper_params.c_local - n*25000)
-        v2 = bpy.context.active_object.matrix_world * (modal_operator_helper_params.c_local + n*25000)
+        v1 = bpy.context.active_object.matrix_world @ (modal_operator_helper_params.c_local - n*25000)
+        v2 = bpy.context.active_object.matrix_world @ (modal_operator_helper_params.c_local + n*25000)
     else:
         v1 = modal_operator_helper_params.c_world - n*25000
         v2 = modal_operator_helper_params.c_world + n*25000
@@ -1348,6 +1368,18 @@ def draw_axis():
     #     v1 = bpy.context.active_object.location + bpy.context.active_object.matrix_world.inverted() * v1
     #     v2 = bpy.context.active_object.location + bpy.context.active_object.matrix_world.inverted() * v2
 
+    # https://docs.blender.org/api/current/gpu.html?highlight=gpu#d-lines-with-single-color
+    import gpu
+    from gpu_extras.batch import batch_for_shader
+
+    coords = [(v1.x,v1.y,v1.z), (v2.x,v2.y,v2.z)]
+    shader = gpu.shader.from_builtin('3D_UNIFORM_COLOR')
+    batch = batch_for_shader(shader, 'LINES', {"pos": coords})
+    
+    shader.bind()
+    shader.uniform_float("color", (n.x, n.y, n.z, 0.5))
+    batch.draw(shader)
+    """
     bgl.glColor4f(n.x, n.y, n.z, 0.5)
 
     # draw line
@@ -1358,6 +1390,7 @@ def draw_axis():
     bgl.glVertex3f(v2.x,v2.y,v2.z)
     bgl.glEnd()
     bgl.glDisable(bgl.GL_BLEND)
+    """
 
 def draw_normal(context, vertexloc, vertexnorm, objscale, is_selected = True):
     # draw normals in object mode
@@ -1368,13 +1401,27 @@ def draw_normal(context, vertexloc, vertexnorm, objscale, is_selected = True):
     vertexloc = copy.copy(vertexloc)
     vertexloc.resize_4d()
     obmat = obj.matrix_world
-    r1 = obmat*vertexloc
+    r1 = obmat @ vertexloc
     r1.resize_3d()
     del vertexloc
-    r2 = obj.rotation_euler.to_matrix() * Vector(vertexnorm)
+    r2 = obj.rotation_euler.to_matrix() @ Vector(vertexnorm)
     r2 = r2* objscale
-    r2 = r2* context.scene.tool_settings.normal_size + r1
+    view3d_overlay = get_view3d_overlay(context)
+    normals_length = view3d_overlay.normals_length if view3d_overlay else 1
+    r2 = r2 * normals_length + r1
 
+    # https://docs.blender.org/api/current/gpu.html?highlight=gpu#d-lines-with-single-color
+    import gpu
+    from gpu_extras.batch import batch_for_shader
+
+    coords = [(r1.x,r1.y,r1.z), (r2.x,r2.y,r2.z)]
+    shader = gpu.shader.from_builtin('3D_UNIFORM_COLOR')
+    batch = batch_for_shader(shader, 'LINES', {"pos": coords})
+    
+    shader.bind()
+    shader.uniform_float("color", color1)
+    batch.draw(shader)
+    """
     bgl.glEnable(bgl.GL_BLEND)
 
     bgl.glLineWidth(thick1)
@@ -1388,14 +1435,35 @@ def draw_normal(context, vertexloc, vertexnorm, objscale, is_selected = True):
 
     bgl.glEnd()
     bgl.glDisable(bgl.GL_BLEND)
-
+    """
+from time import time
+draw_stipple_line_t = time()
 def draw_stipple_line():
+    global draw_stipple_line_t
+
     v1 = modal_operator_helper_params.c_world
     if modal_operator_helper_params.mouse_world:
         v2 = modal_operator_helper_params.mouse_world
     else:
         v2 = Vector()
+    
+    if time() - draw_stipple_line_t > 2:
+        draw_stipple_line_t = time()
+        print("draw_stipple_line", v1, v2)
 
+    # https://docs.blender.org/api/current/gpu.html?highlight=gpu#d-lines-with-single-color
+    import gpu
+    from gpu_extras.batch import batch_for_shader
+
+    coords = [(v1.x,v1.y,v1.z), (v2.x,v2.y,v2.z)]
+    shader = gpu.shader.from_builtin('3D_UNIFORM_COLOR')
+    batch = batch_for_shader(shader, 'LINES', {"pos": coords})
+    
+    shader.bind()
+    shader.uniform_float("color", (0, 0, 0, 1))
+    batch.draw(shader)
+    
+    """
     bgl.glEnable(bgl.GL_BLEND)
     bgl.glEnable(bgl.GL_LINE_STIPPLE)
     bgl.glLineWidth(1)
@@ -1411,6 +1479,7 @@ def draw_stipple_line():
     bgl.glDepthMask(bgl.GL_TRUE)
     bgl.glDisable(bgl.GL_LINE_STIPPLE)
     bgl.glDisable(bgl.GL_BLEND)
+    """
 
 def draw_helpers():
     context = bpy.context
